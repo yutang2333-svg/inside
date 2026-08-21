@@ -321,26 +321,94 @@ h1 {
 .summary-section.quote p { font-size: clamp(23px, 3.4vw, 31px); }
 .summary-actions { margin-top: 45px; display: flex; gap: 12px; flex-wrap: wrap; }
 
+.record-detail {
+  width: min(100%, 780px);
+  margin: 0 auto;
+  padding: clamp(55px, 9vh, 95px) 0 40px;
+}
+
+.record-heading { display: flex; align-items: end; gap: 16px; }
+.title-editor { flex: 1; }
+.title-editor label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 11px; letter-spacing: .1em; }
+.title-editor input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 0 0 10px;
+  outline: none;
+  font-family: "Noto Serif SC", serif;
+  font-size: clamp(28px, 5vw, 48px);
+}
+.title-editor input:focus { border-color: var(--ink); }
+.save-title, .close-export {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 0;
+  cursor: pointer;
+}
+.record-meta { display: flex; gap: 18px; margin: 16px 0 58px; color: var(--muted); font-size: 12px; }
+.raw-record { border-top: 1px solid var(--line); padding: 30px 0; }
+.raw-record h2 { margin: 0 0 24px; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 400; }
+.raw-record p { margin: 0 0 18px; font-family: "Noto Serif SC", serif; font-size: 19px; line-height: 1.85; white-space: pre-wrap; }
+.record-actions { display: flex; gap: 12px; flex-wrap: wrap; padding-top: 14px; }
+
+.export-panel { margin-top: 48px; padding: 30px; border: 1px solid var(--line); border-radius: 14px; animation: appear .35s ease both; }
+.export-head { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.export-head h2 { margin: 5px 0 24px; font-size: clamp(23px, 3vw, 31px); }
+.close-export { font-size: 25px; line-height: 1; }
+.export-panel textarea {
+  width: 100%;
+  min-height: 390px;
+  border: 1px solid var(--soft-line);
+  border-radius: 9px;
+  background: rgba(255,255,255,.22);
+  color: var(--ink);
+  padding: 20px;
+  resize: vertical;
+  outline: none;
+  font: 14px/1.8 "DM Sans", sans-serif;
+}
+.export-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.privacy-note { margin: 18px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.legacy-analysis { margin-top: 45px; border-top: 1px solid var(--line); padding-top: 22px; color: var(--muted); }
+.legacy-analysis summary { cursor: pointer; font-size: 12px; }
+.legacy-analysis section { display: grid; grid-template-columns: 160px 1fr; gap: 22px; padding: 20px 0; border-bottom: 1px solid var(--soft-line); }
+.legacy-analysis h3 { margin: 0; font-family: inherit; font-size: 11px; font-weight: 400; }
+.legacy-analysis p { margin: 0; color: var(--ink); font-family: "Noto Serif SC", serif; line-height: 1.7; }
+
 .history { padding: clamp(55px, 9vh, 95px) 0 40px; }
 .history-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 45px; }
 .history h1 { font-size: clamp(34px, 5vw, 54px); }
 .history-list { border-top: 1px solid var(--line); }
 .history-item {
   width: 100%;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 0 2px;
+}
+.history-main {
+  min-width: 0;
+  flex: 1;
   display: grid;
   grid-template-columns: 150px 1fr auto;
   gap: 28px;
   align-items: start;
   border: 0;
-  border-bottom: 1px solid var(--line);
   background: transparent;
-  padding: 25px 2px;
+  padding: 25px 0;
   text-align: left;
   cursor: pointer;
 }
-.history-item time { color: var(--muted); font-size: 12px; }
-.history-item strong { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 400; }
-.history-item span { color: var(--muted); }
+.history-main time { color: var(--muted); font-size: 12px; }
+.history-main strong { font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 400; }
+.history-main span { color: var(--muted); }
+.history-export { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 8px 13px; cursor: pointer; font-size: 11px; }
+.history-export:hover { color: var(--ink); border-color: var(--ink); }
 .empty { padding: 70px 0; color: var(--muted); font-family: "Noto Serif SC", serif; text-align: center; }
 
 .toast {
@@ -366,8 +434,15 @@ h1 {
   .mic-area { order: -1; }
   .mic-button { width: 76px; height: 76px; }
   .summary-section { grid-template-columns: 1fr; gap: 10px; }
-  .history-item { grid-template-columns: 1fr auto; gap: 9px 16px; }
-  .history-item time { grid-column: 1 / -1; }
+  .record-heading { align-items: center; }
+  .record-meta { flex-direction: column; gap: 6px; }
+  .export-panel { padding: 22px 16px; }
+  .export-panel textarea { min-height: 330px; padding: 15px; }
+  .legacy-analysis section { grid-template-columns: 1fr; gap: 8px; }
+  .history-item { align-items: stretch; gap: 8px; }
+  .history-main { grid-template-columns: 1fr auto; gap: 9px 16px; }
+  .history-main time { grid-column: 1 / -1; }
+  .history-export { align-self: center; }
   .question-anchor { top: 58px; width: calc(100% - 28px); padding: 12px 15px 13px; }
   .question-anchor span { margin-bottom: 5px; }
   .question-anchor-list { gap: 2px; }

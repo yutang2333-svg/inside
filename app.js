@@ -24,7 +24,9 @@ const state = {
   voiceFallback: false,
   finalTranscript: '',
   summary: null,
-  viewingId: null
+  viewingId: null,
+  startedAt: null,
+  exportOpen: false
 };
 
 function dailyPrompts() {
@@ -72,6 +74,8 @@ function begin(opening, autoListen = false, textMode = false) {
   state.turns = [{ role: 'inside', text: opening }];
   state.round = 0;
   state.summary = null;
+  state.startedAt = new Date().toISOString();
+  state.exportOpen = false;
   state.listening = autoListen;
   state.voiceFallback = false;
   state.textMode = textMode;
@@ -185,24 +189,8 @@ function submitResponse() {
   state.turns.push({ role: 'user', text });
   state.round += 1;
   state.finalTranscript = '';
-  state.turns.push({ role: 'inside', text: createFollowUp(text, state.round) });
+  state.turns.push({ role: 'inside', text: '如果还有什么想留下的，可以继续说。' });
   render();
-}
-
-function createFollowUp(text, round) {
-  const clean = text.replace(/[。！？!?]+$/g, '');
-  const clauses = clean.split(/[，。；、]/).map(s => s.trim()).filter(Boolean);
-  const focus = clauses.sort((a,b) => b.length - a.length)[0] || clean;
-  const quoted = focus.length > 28 ? `${focus.slice(0, 27)}…` : focus;
-  const emotional = /难受|不舒服|生气|失望|委屈|焦虑|害怕|担心|后悔|遗憾|烦/.test(text);
-  const choice = /选择|决定|要不要|应该|还是|犹豫|纠结/.test(text);
-  const person = /他|她|对方|同事|朋友|家人|老板|伴侣/.test(text);
-  if (round === 1 && emotional) return `当你说“${quoted}”时，最触动你的，是发生的事情本身，还是它让你看见了某种更深的在意？`;
-  if (round === 1 && choice) return `在这份犹豫里，你最不愿意失去的是什么？`;
-  if (round === 1 && person) return `这件事一直留下来，是因为对方没有理解你，还是因为你当时没有完全表达自己？`;
-  if (round === 2) return `如果先不考虑别人会怎么想，你真正希望发生什么？`;
-  if (round === 3) return `你觉得是什么，让你到现在还没有完全相信自己的这个感受？`;
-  return `回头看刚才说的这些，哪一句最接近你真正想说、却一直没有说清楚的东西？`;
 }
 
 function finishSession() {
@@ -214,65 +202,112 @@ function finishSession() {
     state.finalTranscript = '';
   }
   if (!userTurns.length) { toast('先留下一点想法，再结束这次思考'); return; }
-  state.summary = buildSummary(userTurns);
+  const rawContent = userTurns.join('\n\n');
+  const createdAt = new Date().toISOString();
   const record = {
     id: Date.now().toString(),
-    createdAt: new Date().toISOString(),
+    schemaVersion: 2,
+    title: createTitle(rawContent),
+    createdAt,
+    startedAt: state.startedAt || createdAt,
+    durationSeconds: Math.max(1, Math.round((new Date(createdAt) - new Date(state.startedAt || createdAt)) / 1000)),
     opening: state.opening,
-    turns: state.turns,
-    ...state.summary
+    rawContent,
+    turns: state.turns
   };
   const records = loadRecords();
   records.unshift(record);
   localStorage.setItem('inside_records', JSON.stringify(records));
   state.viewingId = record.id;
   state.screen = 'summary';
+  state.exportOpen = false;
   render();
-  toast('这次思考已经留在这里');
+  toast('这次记录已经保存在这里');
 }
 
-function buildSummary(userTurns) {
-  const all = userTurns.join(' ');
-  const sentences = all.split(/[。！？!?]/).map(s => s.trim()).filter(Boolean);
-  const quote = [...sentences].sort((a,b) => b.length - a.length)[0] || all;
-  const topic = inferTopic(all);
-  return {
-    theme: topic,
-    confusion: `我还在试着弄清：${topic}背后，真正让我放不下的是什么。`,
-    value: inferValue(all),
-    openQuestion: `如果不用急着给出正确答案，我真正希望自己如何面对${topic}？`,
-    quote: quote.length > 64 ? `${quote.slice(0, 63)}…` : quote
-  };
-}
-
-function inferTopic(text) {
-  if (/工作|开会|同事|老板|项目|职业/.test(text)) return '工作中的感受与选择';
-  if (/朋友|伴侣|家人|父母|孩子|关系|对方/.test(text)) return '这段关系里没有说清的话';
-  if (/选择|决定|要不要|应该|犹豫|纠结/.test(text)) return '眼前这个难以决定的选择';
-  if (/未来|以后|方向|目标/.test(text)) return '对未来方向的不确定';
-  return '这件一直留在心里的事';
-}
-
-function inferValue(text) {
-  if (/误解|理解|表达|说/.test(text)) return '被真正理解，也能诚实地表达自己。';
-  if (/选择|决定|犹豫|纠结/.test(text)) return '做出忠于自己的选择，而不是只满足外界的期待。';
-  if (/努力|工作|认可|价值/.test(text)) return '自己的付出被看见，也保有对生活的主动感。';
-  if (/家人|朋友|伴侣|关系/.test(text)) return '关系里的真诚、靠近与彼此尊重。';
-  return '诚实面对自己的感受，不匆忙把它盖过去。';
+function createTitle(text) {
+  const first = text.split(/[。！？!?\n]/).map(part => part.trim()).find(Boolean) || '今天的一次思考';
+  return first.length > 24 ? `${first.slice(0, 24)}…` : first;
 }
 
 function renderSummary() {
   const record = state.viewingId ? loadRecords().find(r => r.id === state.viewingId) : null;
-  const s = record || state.summary;
-  if (!s) { go('home'); return; }
-  const date = record ? new Date(record.createdAt) : new Date();
-  app.innerHTML = shell(`<section class="screen summary"><p class="eyebrow">Reflection kept</p><h1>今天，想到了这里。</h1><p class="summary-date">${formatDate(date)}</p><div class="summary-section"><h3>今天真正困惑的是</h3><p>${escapeHtml(s.confusion)}</p></div><div class="summary-section"><h3>我可能真正看重的是</h3><p>${escapeHtml(s.value)}</p></div><div class="summary-section"><h3>一个还没有答案的问题</h3><p>${escapeHtml(s.openQuestion)}</p></div><div class="summary-section quote"><h3>今天值得留下的一句话</h3><p>“${escapeHtml(s.quote)}”</p></div><div class="summary-actions"><button class="button" data-go="home">回到首页</button><button class="button secondary" data-go="history">看看过往思考</button></div></section>`);
+  if (!record) { go('home'); return; }
+  const legacy = hasLegacyAnalysis(record) ? `<details class="legacy-analysis"><summary>查看旧版本生成的分析</summary><div>${record.theme ? `<section><h3>当时生成的主题</h3><p>${escapeHtml(record.theme)}</p></section>` : ''}${record.confusion ? `<section><h3>当时生成的困惑</h3><p>${escapeHtml(record.confusion)}</p></section>` : ''}${record.value ? `<section><h3>当时生成的在意</h3><p>${escapeHtml(record.value)}</p></section>` : ''}${record.openQuestion ? `<section><h3>当时留下的问题</h3><p>${escapeHtml(record.openQuestion)}</p></section>` : ''}${record.quote ? `<section><h3>当时留下的一句话</h3><p>“${escapeHtml(record.quote)}”</p></section>` : ''}</div></details>` : '';
+  const exportPanel = state.exportOpen ? renderExportPanel(record) : '';
+  app.innerHTML = shell(`<section class="screen record-detail"><p class="eyebrow">Record kept</p><div class="record-heading"><div class="title-editor"><label for="recordTitle">标题</label><input id="recordTitle" value="${escapeHtml(record.title)}" maxlength="60" /></div><button class="save-title" id="saveTitle">保存标题</button></div><div class="record-meta"><span>${formatDate(new Date(record.createdAt))}</span><span>${record.durationSeconds == null ? '旧记录未记录时长' : `记录 ${formatDuration(record.durationSeconds)}`}</span></div><section class="raw-record"><h2>我的原始记录</h2><div>${record.rawContent.split('\n').map(line => line.trim() ? `<p>${escapeHtml(line)}</p>` : '').join('')}</div></section><div class="record-actions"><button class="button" id="showExport">发送给 GPT 分析</button><button class="button secondary" data-go="history">查看历史记录</button><button class="button textual" data-go="home">回到首页</button></div>${exportPanel}${legacy}</section>`, '历史记录');
+  document.querySelector('#saveTitle')?.addEventListener('click', () => saveRecordTitle(record.id));
+  document.querySelector('#recordTitle')?.addEventListener('keydown', event => { if (event.key === 'Enter') saveRecordTitle(record.id); });
+  document.querySelector('#showExport')?.addEventListener('click', () => { state.exportOpen = true; render(); });
+  bindExportActions(record);
 }
 
 function renderHistory() {
   const records = loadRecords();
-  app.innerHTML = shell(`<section class="screen history"><div class="history-head"><div><p class="eyebrow">Your private archive</p><h1>过往思考</h1></div></div>${records.length ? `<div class="history-list">${records.map(r => `<button class="history-item" data-record="${r.id}"><time>${formatDate(new Date(r.createdAt))}</time><strong>${escapeHtml(r.theme)}</strong><span>↗</span></button>`).join('')}</div>` : `<div class="empty">这里还很安静。<br>完成第一次思考后，它会被留在这里。</div>`}</section>`, '回到首页');
+  app.innerHTML = shell(`<section class="screen history"><div class="history-head"><div><p class="eyebrow">Your private archive</p><h1>过往思考</h1></div></div>${records.length ? `<div class="history-list">${records.map(r => `<div class="history-item"><button class="history-main" data-record="${r.id}"><time>${formatDate(new Date(r.createdAt))}</time><strong>${escapeHtml(r.title)}</strong><span>↗</span></button><button class="history-export" data-export-record="${r.id}">发送给 GPT</button></div>`).join('')}</div>` : `<div class="empty">这里还很安静。<br>完成第一次记录后，它会被留在这里。</div>`}</section>`, '回到首页');
   document.querySelectorAll('[data-record]').forEach(btn => btn.addEventListener('click', () => { state.viewingId = btn.dataset.record; state.screen = 'summary'; render(); }));
+  document.querySelectorAll('[data-export-record]').forEach(btn => btn.addEventListener('click', () => { state.viewingId = btn.dataset.exportRecord; state.exportOpen = true; state.screen = 'summary'; render(); }));
+}
+
+function renderExportPanel(record) {
+  return `<section class="export-panel" aria-label="发送给 GPT 分析"><div class="export-head"><div><p class="eyebrow">Export to GPT Analysis</p><h2>把这次记录交给 GPT 深入理解</h2></div><button class="close-export" id="closeExport" aria-label="关闭导出区域">×</button></div><textarea id="exportPrompt" readonly>${escapeHtml(buildAnalysisPrompt(record))}</textarea><div class="export-actions"><button class="button" id="copyPrompt">复制 Prompt</button><button class="button secondary" id="sharePrompt">分享</button><button class="button secondary" id="openGPT">复制并打开 ChatGPT</button></div><p class="privacy-note">原始记录仍保存在你的浏览器中。只有当你粘贴或分享时，内容才会离开 Inside。</p></section>`;
+}
+
+function buildAnalysisPrompt(record) {
+  return `标题：${record.title}\n日期：${formatDate(new Date(record.createdAt))}\n\n我的原始记录：\n${record.rawContent}\n\n请作为我的长期思考伙伴分析：\n\n- 这段表达背后的核心情绪是什么？\n- 我真正关注的问题是什么？\n- 是否存在我没有意识到的矛盾？\n- 是否反映出重复出现的思维模式？\n- 请结合这段记录，提出3个值得继续思考的问题。\n\n不要简单总结，也不要急着给建议或安慰。\n请帮助我理解自己的情绪、需求、矛盾和反复出现的思考方式。\n如果信息不足，请明确说明，不要替我下结论。`;
+}
+
+function bindExportActions(record) {
+  if (!state.exportOpen) return;
+  document.querySelector('#closeExport')?.addEventListener('click', () => { state.exportOpen = false; render(); });
+  document.querySelector('#copyPrompt')?.addEventListener('click', async () => {
+    const copied = await copyText(buildAnalysisPrompt(record));
+    toast(copied ? 'Prompt 已复制，可以粘贴给 GPT' : '复制失败，请长按文字手动复制');
+  });
+  document.querySelector('#sharePrompt')?.addEventListener('click', async () => {
+    const prompt = buildAnalysisPrompt(record);
+    if (navigator.share) {
+      try { await navigator.share({ title: record.title, text: prompt }); }
+      catch (error) { if (error.name !== 'AbortError') toast('暂时无法分享，请使用复制按钮'); }
+    } else {
+      const copied = await copyText(prompt);
+      toast(copied ? '设备不支持分享，Prompt 已为你复制' : '设备不支持直接分享');
+    }
+  });
+  document.querySelector('#openGPT')?.addEventListener('click', async () => {
+    const newTab = window.open('https://chatgpt.com/', '_blank', 'noopener');
+    const copied = await copyText(buildAnalysisPrompt(record));
+    toast(copied ? 'Prompt 已复制，请在 ChatGPT 中粘贴' : 'ChatGPT 已打开，请手动复制 Prompt');
+    if (!newTab) window.location.href = 'https://chatgpt.com/';
+  });
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) {
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.style.position = 'fixed';
+    helper.style.opacity = '0';
+    document.body.appendChild(helper);
+    helper.select();
+    const copied = document.execCommand('copy');
+    helper.remove();
+    return copied;
+  }
+}
+
+function saveRecordTitle(id) {
+  const input = document.querySelector('#recordTitle');
+  const title = input?.value.trim();
+  if (!title) { toast('标题不能为空'); return; }
+  const records = loadRawRecords();
+  const index = records.findIndex(record => String(record.id) === String(id));
+  if (index < 0) return;
+  records[index] = { ...records[index], title };
+  localStorage.setItem('inside_records', JSON.stringify(records));
+  render();
+  toast('标题已保存');
 }
 
 function bindGlobal() {
@@ -283,17 +318,48 @@ function go(screen) {
   stopRecognition();
   if (screen === 'history' && state.screen === 'conversation' && state.turns.some(t => t.role === 'user')) { finishSession(); return; }
   state.screen = screen;
+  state.exportOpen = false;
   state.finalTranscript = '';
   render();
 }
 
 function loadRecords() {
-  try { return JSON.parse(localStorage.getItem('inside_records') || '[]'); }
-  catch (_) { return []; }
+  return loadRawRecords().map(normalizeRecord);
+}
+
+function loadRawRecords() {
+  try {
+    const records = JSON.parse(localStorage.getItem('inside_records') || '[]');
+    return Array.isArray(records) ? records : [];
+  } catch (_) { return []; }
+}
+
+function normalizeRecord(record) {
+  const userTurns = Array.isArray(record.turns) ? record.turns.filter(turn => turn.role === 'user').map(turn => turn.text).filter(Boolean) : [];
+  const rawContent = record.rawContent || userTurns.join('\n\n') || '这条旧记录没有可读取的原始文字。';
+  return {
+    ...record,
+    id: String(record.id),
+    schemaVersion: record.schemaVersion || 1,
+    title: record.title || record.theme || createTitle(rawContent),
+    rawContent
+  };
+}
+
+function hasLegacyAnalysis(record) {
+  return Boolean(record.theme || record.confusion || record.value || record.openQuestion || record.quote);
 }
 
 function formatDate(date) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(1, Number(seconds) || 1);
+  if (total < 60) return `${total} 秒`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分钟`;
 }
 
 function escapeHtml(value = '') {
