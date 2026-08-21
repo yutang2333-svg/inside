@@ -131,6 +131,24 @@ h1 {
 .prompt:hover { padding-left: 8px; }
 .prompt span:last-child { color: var(--muted); font-family: sans-serif; }
 
+.change-prompts {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .2s ease;
+}
+
+.change-prompts:hover { color: var(--ink); }
+.change-prompts span { font-size: 14px; transition: transform .3s ease; }
+.change-prompts:hover span { transform: rotate(45deg); }
+
 .mic-area { text-align: center; }
 
 .mic-button {

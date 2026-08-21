@@ -15,6 +15,7 @@ const promptPool = [
 const state = {
   screen: 'home',
   prompts: dailyPrompts(),
+  promptPage: 0,
   opening: '',
   turns: [],
   round: 0,
@@ -29,6 +30,14 @@ function dailyPrompts() {
   const day = Math.floor(new Date().setHours(0,0,0,0) / 86400000);
   const start = (day * 3) % promptPool.length;
   return [0,1,2].map(i => promptPool[(start + i) % promptPool.length]);
+}
+
+function changePrompts() {
+  const day = Math.floor(new Date().setHours(0,0,0,0) / 86400000);
+  state.promptPage = (state.promptPage + 1) % Math.ceil(promptPool.length / 3);
+  const start = ((day * 3) + (state.promptPage * 3)) % promptPool.length;
+  state.prompts = [0,1,2].map(i => promptPool[(start + i) % promptPool.length]);
+  render();
 }
 
 function iconMic() {
@@ -48,8 +57,9 @@ function render() {
 }
 
 function renderHome() {
-  app.innerHTML = shell(`<section class="screen home"><div class="intro"><p class="eyebrow">A quiet place to think</p><h1>让一个念头，慢慢变得清楚。</h1><p class="subtitle">We don't have to start with the whole story.</p></div><div class="prompts-wrap"><div class="prompt-list">${state.prompts.map((p, i) => `<button class="prompt" data-prompt="${i}"><span>${p}</span><span>↗</span></button>`).join('')}</div><div class="mic-area"><button class="mic-button" id="quickMic" aria-label="开始说话">${iconMic()}</button><p class="mic-hint">从任何地方开始说</p></div></div><div><button class="text-entry" id="textStart">也可以从：今天我一直在想…… 开始</button></div></section>`);
+  app.innerHTML = shell(`<section class="screen home"><div class="intro"><p class="eyebrow">A quiet place to think</p><h1>让一个念头，慢慢变得清楚。</h1><p class="subtitle">We don't have to start with the whole story.</p></div><div class="prompts-wrap"><div><div class="prompt-list">${state.prompts.map((p, i) => `<button class="prompt" data-prompt="${i}"><span>${p}</span><span>↗</span></button>`).join('')}</div><button class="change-prompts" id="changePrompts" aria-label="换一组开场问题">换一组问题 <span>↻</span></button></div><div class="mic-area"><button class="mic-button" id="quickMic" aria-label="开始说话">${iconMic()}</button><p class="mic-hint">从任何地方开始说</p></div></div><div><button class="text-entry" id="textStart">也可以从：今天我一直在想…… 开始</button></div></section>`);
   document.querySelectorAll('[data-prompt]').forEach(btn => btn.addEventListener('click', () => begin(state.prompts[Number(btn.dataset.prompt)], false)));
+  document.querySelector('#changePrompts').addEventListener('click', changePrompts);
   document.querySelector('#quickMic').addEventListener('click', () => begin('你此刻最想说的，是什么？', true));
   document.querySelector('#textStart').addEventListener('click', () => begin('今天一直留在你心里的，是什么？', false, true));
 }
