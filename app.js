@@ -21,6 +21,7 @@ const state = {
   round: 0,
   listening: false,
   recognition: null,
+  voiceFallback: false,
   finalTranscript: '',
   summary: null,
   viewingId: null
@@ -72,6 +73,7 @@ function begin(opening, autoListen = false, textMode = false) {
   state.round = 0;
   state.summary = null;
   state.listening = autoListen;
+  state.voiceFallback = false;
   state.textMode = textMode;
   render();
   if (autoListen) startRecognition();
@@ -85,7 +87,11 @@ function renderConversation() {
 }
 
 function responseUI() {
-  if (state.listening) return `<div class="listening-panel"><div class="listening-orb">${iconMic()}</div><p class="status">我在听</p><p class="status-note">你可以慢慢说，停顿不会结束</p><textarea class="transcript" id="transcript" placeholder="你的话会安静地出现在这里……">${escapeHtml(state.finalTranscript)}</textarea><div class="actions"><button class="button" id="finishSpeaking">结束表达</button></div></div>`;
+  if (state.listening) {
+    const currentQuestion = [...state.turns].reverse().find(t => t.role === 'inside')?.text || state.opening;
+    const fallback = state.voiceFallback || !(window.SpeechRecognition || window.webkitSpeechRecognition);
+    return `<div class="listening-panel"><div class="active-question"><span>INSIDE 正在问</span><p>${escapeHtml(currentQuestion)}</p></div><div class="listening-orb">${iconMic()}</div><p class="status">${fallback ? '可以继续表达' : '我在听'}</p><p class="status-note">${fallback ? '当前浏览器无法自动转写，请轻触下方输入框，使用手机键盘的听写麦克风' : '你可以慢慢说，停顿不会结束'}</p><textarea class="transcript" id="transcript" placeholder="${fallback ? '轻触这里，然后使用手机键盘上的麦克风……' : '你的话会安静地出现在这里……'}">${escapeHtml(state.finalTranscript)}</textarea><div class="actions"><button class="button" id="finishSpeaking">结束表达并继续</button></div></div>`;
+  }
   return `<div class="text-mode"><textarea class="transcript" id="transcript" autofocus placeholder="写下或说出你此刻想到的……">${escapeHtml(state.finalTranscript)}</textarea><div class="actions"><button class="button secondary" id="listen">${iconMic()}&nbsp;&nbsp;用语音回答</button><button class="button" id="send" ${state.finalTranscript.trim() ? '' : 'disabled'}>继续</button><button class="button textual" id="endSession">今天先到这里</button></div></div>`;
 }
 
@@ -98,8 +104,16 @@ function bindResponse() {
       if (send) send.disabled = !e.target.value.trim();
     });
   }
-  document.querySelector('#listen')?.addEventListener('click', () => { state.listening = true; render(); startRecognition(); });
-  document.querySelector('#finishSpeaking')?.addEventListener('click', () => { stopRecognition(); state.listening = false; render(); });
+  document.querySelector('#listen')?.addEventListener('click', () => { state.listening = true; state.voiceFallback = false; render(); startRecognition(); });
+  document.querySelector('#finishSpeaking')?.addEventListener('click', () => {
+    stopRecognition();
+    state.listening = false;
+    if (state.finalTranscript.trim()) submitResponse();
+    else {
+      render();
+      toast('还没有收到内容，可以再试一次或直接输入文字');
+    }
+  });
   document.querySelector('#send')?.addEventListener('click', submitResponse);
   document.querySelector('#endSession')?.addEventListener('click', finishSession);
 }
@@ -107,9 +121,10 @@ function bindResponse() {
 function startRecognition() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
-    state.listening = false;
+    state.voiceFallback = true;
     render();
-    toast('当前浏览器不支持语音识别，你仍然可以直接输入文字');
+    document.querySelector('#transcript')?.focus();
+    toast('请使用手机键盘上的听写麦克风');
     return;
   }
   try {
@@ -131,7 +146,15 @@ function startRecognition() {
       if (box) box.value = state.finalTranscript;
     };
     recognition.onerror = event => {
-      if (event.error !== 'aborted') toast(event.error === 'not-allowed' ? '请允许浏览器使用麦克风，或改用文字输入' : '没有听清，你可以再试一次或直接输入');
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        state.recognition = null;
+        state.voiceFallback = true;
+        render();
+        document.querySelector('#transcript')?.focus();
+        toast('无法使用网页麦克风，请使用手机键盘上的听写麦克风');
+      } else if (event.error !== 'aborted') {
+        toast('没有听清，你可以继续说或直接输入');
+      }
     };
     recognition.onend = () => {
       if (state.listening && state.recognition === recognition) {
@@ -140,9 +163,10 @@ function startRecognition() {
     };
     recognition.start();
   } catch (_) {
-    state.listening = false;
+    state.voiceFallback = true;
     render();
-    toast('麦克风暂时无法启动，请先用文字输入');
+    document.querySelector('#transcript')?.focus();
+    toast('麦克风暂时无法启动，请使用手机键盘听写');
   }
 }
 

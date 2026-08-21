@@ -206,6 +206,34 @@ h1 {
 
 .listening-panel { text-align: center; padding: 22px 0 4px; }
 
+.active-question {
+  position: sticky;
+  top: 18px;
+  z-index: 2;
+  margin: -10px 0 38px;
+  padding: 17px 20px 18px;
+  border: 1px solid var(--soft-line);
+  border-radius: 12px;
+  background: rgba(244, 240, 232, .94);
+  backdrop-filter: blur(10px);
+  text-align: left;
+}
+
+.active-question span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.active-question p {
+  margin: 0;
+  font-family: "Noto Serif SC", serif;
+  font-size: clamp(17px, 2.5vw, 21px);
+  line-height: 1.65;
+}
+
 .listening-orb {
   width: 56px;
   height: 56px;
