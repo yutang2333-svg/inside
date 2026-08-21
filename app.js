@@ -81,8 +81,7 @@ function begin(opening, autoListen = false, textMode = false) {
 
 function renderConversation() {
   const turns = state.turns.map(t => `<article class="turn ${t.role}"><div class="turn-label">${t.role === 'inside' ? 'INSIDE' : '你'}</div><p>${escapeHtml(t.text)}</p></article>`).join('');
-  const currentQuestion = [...state.turns].reverse().find(t => t.role === 'inside')?.text || state.opening;
-  const questionAnchor = state.listening ? `<aside class="question-anchor" aria-live="polite"><span>INSIDE 正在问</span><p>${escapeHtml(currentQuestion)}</p></aside>` : '';
+  const questionAnchor = state.listening ? `<aside class="question-anchor" aria-label="今天的三个开场问题"><span>今天的三个问题</span><div class="question-anchor-list">${state.prompts.map(prompt => `<p class="${prompt === state.opening ? 'selected' : ''}">${escapeHtml(prompt)}</p>`).join('')}</div></aside>` : '';
   app.innerHTML = shell(`<section class="screen conversation">${questionAnchor}<div class="context-line">不用急。停顿也算表达的一部分。</div><div id="turns">${turns}</div><div class="response-area">${responseUI()}</div></section>`, '今天先到这里');
   bindResponse();
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
