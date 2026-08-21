@@ -1,22 +1,14 @@
 const app = document.querySelector('#app');
 
-const promptPool = [
-  '今天有什么还留在你脑子里？',
-  '有没有一个瞬间，你后来又想起了？',
-  '最近有什么问题一直没有答案？',
-  '今天有哪一刻，你没有说出真正想说的话？',
-  '最近什么事情让你有一点迟疑？',
-  '有没有一种感受，你还没来得及好好看见？',
-  '如果此刻不用给任何人解释，你最想说什么？',
-  '最近你在反复权衡什么？',
-  '有什么看似很小，却一直没有过去？'
-];
+const promptCategories = window.INSIDE_PROMPT_CATEGORIES || [];
+const promptPool = (window.INSIDE_PROMPTS || []).filter(prompt => prompt.active !== false);
 
 const state = {
   screen: 'home',
   prompts: dailyPrompts(),
   promptPage: 0,
   opening: '',
+  openingPrompt: null,
   turns: [],
   round: 0,
   listening: false,
@@ -30,17 +22,97 @@ const state = {
 };
 
 function dailyPrompts() {
-  const day = Math.floor(new Date().setHours(0,0,0,0) / 86400000);
-  const start = (day * 3) % promptPool.length;
-  return [0,1,2].map(i => promptPool[(start + i) % promptPool.length]);
+  const date = dateKey();
+  try {
+    const cached = JSON.parse(localStorage.getItem('inside_daily_prompts') || 'null');
+    if (cached?.date === date && Array.isArray(cached.ids)) {
+      const prompts = cached.ids.map(id => promptPool.find(prompt => prompt.id === id)).filter(Boolean);
+      if (prompts.length === 3) return prompts;
+    }
+  } catch (_) {}
+  const prompts = selectPromptSet(`${date}:daily`, getRecentPromptIds());
+  localStorage.setItem('inside_daily_prompts', JSON.stringify({ date, ids: prompts.map(prompt => prompt.id) }));
+  rememberShownPrompts(prompts);
+  return prompts;
 }
 
 function changePrompts() {
-  const day = Math.floor(new Date().setHours(0,0,0,0) / 86400000);
-  state.promptPage = (state.promptPage + 1) % Math.ceil(promptPool.length / 3);
-  const start = ((day * 3) + (state.promptPage * 3)) % promptPool.length;
-  state.prompts = [0,1,2].map(i => promptPool[(start + i) % promptPool.length]);
+  state.promptPage += 1;
+  const excluded = new Set([...state.prompts.map(prompt => prompt.id), ...getRecentPromptIds()]);
+  state.prompts = selectPromptSet(`${dateKey()}:change:${state.promptPage}`, excluded);
+  rememberShownPrompts(state.prompts);
   render();
+}
+
+function selectPromptSet(seedText, excludedIds = new Set()) {
+  const seed = hashText(seedText);
+  const categories = seededShuffle(promptCategories.map(category => category.id), seed);
+  const selected = [];
+  for (const category of categories) {
+    const candidates = seededShuffle(promptPool.filter(prompt => prompt.category === category && !excludedIds.has(prompt.id)), seed + hashText(category));
+    if (candidates[0]) selected.push(candidates[0]);
+    if (selected.length === 3) return selected;
+  }
+  const fallback = seededShuffle(promptPool.filter(prompt => !selected.some(item => item.id === prompt.id)), seed + 97);
+  return [...selected, ...fallback].slice(0, 3);
+}
+
+function seededShuffle(items, seed) {
+  const result = [...items];
+  let value = seed || 1;
+  for (let i = result.length - 1; i > 0; i--) {
+    value = (value * 1664525 + 1013904223) >>> 0;
+    const j = value % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function hashText(text) {
+  let hash = 2166136261;
+  for (const char of text) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return hash >>> 0;
+}
+
+function dateKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function loadPromptHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem('inside_prompt_history') || '[]');
+    return Array.isArray(history) ? history : [];
+  } catch (_) { return []; }
+}
+
+function getRecentPromptIds(limit = 18) {
+  return new Set(loadPromptHistory().slice(0, limit).map(item => item.promptId));
+}
+
+function rememberShownPrompts(prompts) {
+  const history = loadPromptHistory();
+  const shownAt = new Date().toISOString();
+  prompts.forEach(prompt => history.unshift({ promptId: prompt.id, category: prompt.category, shownAt, selected: false }));
+  localStorage.setItem('inside_prompt_history', JSON.stringify(history.slice(0, 120)));
+}
+
+function rememberSelectedPrompt(prompt) {
+  if (!prompt?.id) return;
+  const history = loadPromptHistory();
+  const match = history.find(item => item.promptId === prompt.id && !item.selected);
+  if (match) match.selected = true;
+  else history.unshift({ promptId: prompt.id, category: prompt.category, shownAt: new Date().toISOString(), selected: true });
+  localStorage.setItem('inside_prompt_history', JSON.stringify(history.slice(0, 120)));
+}
+
+function getPromptRecommendationProfile(records = loadRecords()) {
+  const counts = Object.fromEntries(promptCategories.map(category => [category.id, 0]));
+  records.forEach(record => {
+    const category = record.promptContext?.category;
+    if (category in counts) counts[category] += 1;
+  });
+  return counts;
 }
 
 function iconMic() {
@@ -60,17 +132,20 @@ function render() {
 }
 
 function renderHome() {
-  app.innerHTML = shell(`<section class="screen home"><div class="intro"><p class="eyebrow">A quiet place to think</p><h1>让一个念头，慢慢变得清楚。</h1><p class="subtitle">We don't have to start with the whole story.</p></div><div class="prompts-wrap"><div><div class="prompt-list">${state.prompts.map((p, i) => `<button class="prompt" data-prompt="${i}"><span>${p}</span><span>↗</span></button>`).join('')}</div><button class="change-prompts" id="changePrompts" aria-label="换一组开场问题">换一组问题 <span>↻</span></button></div><div class="mic-area"><button class="mic-button" id="quickMic" aria-label="开始说话">${iconMic()}</button><p class="mic-hint">从任何地方开始说</p></div></div><div><button class="text-entry" id="textStart">也可以从：今天我一直在想…… 开始</button></div></section>`);
+  app.innerHTML = shell(`<section class="screen home"><div class="intro"><p class="eyebrow">A quiet place to think</p><h1>让一个念头，慢慢变得清楚。</h1><p class="subtitle">We don't have to start with the whole story.</p></div><div class="prompts-wrap"><div><div class="prompt-list">${state.prompts.map((prompt, i) => `<button class="prompt" data-prompt="${i}"><span>${escapeHtml(prompt.text)}</span><span>↗</span></button>`).join('')}</div><button class="change-prompts" id="changePrompts" aria-label="换一组开场问题">换一组问题 <span>↻</span></button></div><div class="mic-area"><button class="mic-button" id="quickMic" aria-label="开始说话">${iconMic()}</button><p class="mic-hint">从任何地方开始说</p></div></div><div><button class="text-entry" id="textStart">也可以从：今天我一直在想…… 开始</button></div></section>`);
   document.querySelectorAll('[data-prompt]').forEach(btn => btn.addEventListener('click', () => begin(state.prompts[Number(btn.dataset.prompt)], false)));
   document.querySelector('#changePrompts').addEventListener('click', changePrompts);
   document.querySelector('#quickMic').addEventListener('click', () => begin('你此刻最想说的，是什么？', true));
   document.querySelector('#textStart').addEventListener('click', () => begin('今天一直留在你心里的，是什么？', false, true));
 }
 
-function begin(opening, autoListen = false, textMode = false) {
+function begin(prompt, autoListen = false, textMode = false) {
   stopRecognition();
+  const opening = typeof prompt === 'string' ? prompt : prompt.text;
   state.screen = 'conversation';
   state.opening = opening;
+  state.openingPrompt = typeof prompt === 'string' ? null : prompt;
+  rememberSelectedPrompt(state.openingPrompt);
   state.turns = [{ role: 'inside', text: opening }];
   state.round = 0;
   state.summary = null;
@@ -85,7 +160,7 @@ function begin(opening, autoListen = false, textMode = false) {
 
 function renderConversation() {
   const turns = state.turns.map(t => `<article class="turn ${t.role}"><div class="turn-label">${t.role === 'inside' ? 'INSIDE' : '你'}</div><p>${escapeHtml(t.text)}</p></article>`).join('');
-  const questionAnchor = state.listening ? `<aside class="question-anchor" aria-label="今天的三个开场问题"><span>今天的三个问题</span><div class="question-anchor-list">${state.prompts.map(prompt => `<p class="${prompt === state.opening ? 'selected' : ''}">${escapeHtml(prompt)}</p>`).join('')}</div></aside>` : '';
+  const questionAnchor = state.listening ? `<aside class="question-anchor" aria-label="今天的三个开场问题"><span>今天的三个问题</span><div class="question-anchor-list">${state.prompts.map(prompt => `<p class="${prompt.id === state.openingPrompt?.id ? 'selected' : ''}">${escapeHtml(prompt.text)}</p>`).join('')}</div></aside>` : '';
   app.innerHTML = shell(`<section class="screen conversation">${questionAnchor}<div class="context-line">不用急。停顿也算表达的一部分。</div><div id="turns">${turns}</div><div class="response-area">${responseUI()}</div></section>`, '今天先到这里');
   bindResponse();
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -212,6 +287,12 @@ function finishSession() {
     startedAt: state.startedAt || createdAt,
     durationSeconds: Math.max(1, Math.round((new Date(createdAt) - new Date(state.startedAt || createdAt)) / 1000)),
     opening: state.opening,
+    promptContext: state.openingPrompt ? {
+      id: state.openingPrompt.id,
+      category: state.openingPrompt.category,
+      text: state.openingPrompt.text,
+      tags: state.openingPrompt.tags || []
+    } : null,
     rawContent,
     turns: state.turns
   };
